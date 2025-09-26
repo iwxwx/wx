@@ -1,44 +1,57 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <title>任务反馈</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>任务完成确认</title>
   <style>
-    body { font-family: Arial, sans-serif; max-width: 600px; margin: 30px auto; }
-    h2 { color: #333; }
-    textarea { width: 100%; height: 120px; margin: 10px 0; }
-    button { padding: 10px 20px; margin: 5px; cursor: pointer; border: none; border-radius: 4px; }
-    #submitBtn { background-color: #1677ff; color: white; }
-    #viewBtn { background-color: #eee; }
-    #submitBtn.disabled { background-color: #999; cursor: not-allowed; }
+    :root { --primary:#1677ff; }
+    body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,"Microsoft YaHei",sans-serif; margin: 32px auto; max-width: 980px; color:#222; }
+    h2{ font-size:28px; margin:0 0 24px; }
+    p{ line-height:1.8; margin:8px 0; }
+    textarea{ width:100%; height:180px; padding:10px; resize:vertical; border:1px solid #ddd; border-radius:6px; font-size:14px; }
+    .row{ margin:14px 0; }
+    .btn{ display:inline-block; padding:10px 18px; border-radius:6px; border:1px solid transparent; cursor:pointer; font-size:14px; }
+    .btn-primary{ background:var(--primary); color:#fff; }
+    .btn-plain{ background:#f4f5f7; color:#333; }
+    .btn.disabled, .btn[disabled]{ opacity:.6; cursor:not-allowed; }
+    .muted{ color:#888; }
   </style>
 </head>
 <body>
   <h2>任务完成确认</h2>
-  <p>任务：<span id="subject">-</span></p>
-  <p>执行人：<span id="executor">-</span></p>
-  <p>sourceId：<span id="sourceId">-</span></p>
-  <p>备注:</p>
-  <textarea id="remark"></textarea><br>
-  <button id="submitBtn">完成并提交</button>
-  <button id="viewBtn">仅查看</button>
+
+  <p>任务：<span id="subject" class="muted">-</span></p>
+  <p>执行人：<span id="executor" class="muted">-</span></p>
+  <p>sourceId：<span id="sourceId" class="muted">-</span></p>
+
+  <div class="row">
+    <div>备注：</div>
+    <textarea id="remark" placeholder="可填写处理说明、结果等"></textarea>
+  </div>
+
+  <div class="row">
+    <button id="submitBtn" class="btn btn-primary">完成并提交</button>
+    <button id="viewBtn" class="btn btn-plain">仅查看</button>
+  </div>
 
   <script>
-    // 1) 改成你的 Worker 地址（记得替换成实际 workers.dev）
+    // === 1) Cloudflare Worker 地址（已替换为你的）===
     const RELAY_ENDPOINT = "https://dingtalk-relay.jb2909825662.workers.dev/";
 
-    // 2) 从 URL 获取参数
+    // === 2) 读取 URL 参数 ===
     const P = new URLSearchParams(location.search);
-    const subject  = P.get('subject') || "演示任务";
-    const executor = P.get('executor') || "张三";
-    const sourceId = P.get('sourceId') || "demo-001";
+    const subject  = P.get("subject") || "演示任务";
+    // 兼容 executor / executorUnionId 两个参数名
+    const executor = P.get("executor") || P.get("executorUnionId") || "张三";
+    const sourceId = P.get("sourceId") || "demo-001";
 
     // 显示到页面
-    document.getElementById("subject").innerText = subject;
-    document.getElementById("executor").innerText = executor;
-    document.getElementById("sourceId").innerText = sourceId;
+    document.getElementById("subject").textContent = subject;
+    document.getElementById("executor").textContent = executor;
+    document.getElementById("sourceId").textContent = sourceId;
 
-    // 3) 封装调用 Worker 的函数
+    // === 3) 调用 Worker 发送到钉钉 ===
     async function sendToDingTalk({ subject, executor, sourceId, remark }) {
       const body = {
         payload: {
@@ -46,57 +59,73 @@
           markdown: {
             title: "任务完成",
             text: `**任务完成**
-- 任务：${subject}
-- 执行人：${executor}
-- sourceId：${sourceId}
-- 备注：${remark || "-"}
+- 任务：${subject || "-"}
+- 执行人：${executor || "-"}
+- sourceId：${sourceId || "-"}
+- 备注：${(remark || "-").replace(/\n/g, "\\n")}
 - 完成时间：${new Date().toLocaleString('zh-CN')}`
           }
         }
       };
 
-      const r = await fetch(RELAY_ENDPOINT, {
+      const resp = await fetch(RELAY_ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body)
       });
-      return r.json().catch(() => ({}));
+
+      // 先读文本再尝试 JSON，避免解析异常时“卡住”
+      const text = await resp.text();
+      let data = {};
+      try { data = JSON.parse(text); } catch { data = { raw: text }; }
+
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${text}`);
+      return data;
     }
 
-    // 4) 绑定按钮事件
-    const btn = document.getElementById("submitBtn");
-    const remarkEl = document.getElementById("remark");
+    // === 4) 绑定按钮事件 ===
+    const submitBtn = document.getElementById("submitBtn");
+    const viewBtn   = document.getElementById("viewBtn");
+    const remarkEl  = document.getElementById("remark");
 
-    btn.addEventListener("click", async () => {
-      btn.disabled = true;
-      btn.classList.add("disabled");
-      btn.innerText = "提交中...";
+    async function handleSubmit() {
+      submitBtn.disabled = true;
+      submitBtn.classList.add("disabled");
+      submitBtn.textContent = "提交中...";
 
-      const result = await sendToDingTalk({
-        subject,
-        executor,
-        sourceId,
-        remark: remarkEl.value
-      });
+      try {
+        const result = await sendToDingTalk({
+          subject, executor, sourceId, remark: (remarkEl.value || "").trim()
+        });
 
-      if (result.errcode === 0) {
-        remarkEl.readOnly = true;
-        btn.innerText = "已提交";
-        alert("提交成功，已推送到钉钉群");
-      } else {
-        btn.disabled = false;
-        btn.classList.remove("disabled");
-        btn.innerText = "完成并提交";
-        alert("提交失败: " + JSON.stringify(result));
+        if (result.errcode === 0) {
+          remarkEl.readOnly = true;
+          submitBtn.textContent = "已提交";
+          alert("提交成功，已推送到钉钉群。");
+        } else {
+          throw new Error(JSON.stringify(result));
+        }
+      } catch (e) {
+        console.error(e);
+        alert("提交失败：" + e.message);
+        submitBtn.disabled = false;
+        submitBtn.classList.remove("disabled");
+        submitBtn.textContent = "完成并提交";
       }
-    });
+    }
 
-    document.getElementById("viewBtn").addEventListener("click", () => {
+    function enterViewOnly() {
       remarkEl.readOnly = true;
-      btn.disabled = true;
-      btn.classList.add("disabled");
-      btn.innerText = "只读模式";
-    });
+      submitBtn.disabled = true;
+      submitBtn.classList.add("disabled");
+      submitBtn.textContent = "只读模式";
+    }
+
+    submitBtn.addEventListener("click", handleSubmit);
+    viewBtn .addEventListener("click", enterViewOnly);
+
+    // 可选：URL 上带 readonly=1 时自动只读
+    if (P.get("readonly") === "1") enterViewOnly();
   </script>
 </body>
 </html>
