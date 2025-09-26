@@ -1,166 +1,102 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>任务完成确认</title>
-<style>
-  :root { --pri:#1677ff; --mut:#f2f3f5; }
-  body{font-family:system-ui,Arial;margin:24px}
-  .card{max-width:760px;margin:0 auto;border:1px solid #eee;border-radius:14px;padding:20px 22px;box-shadow:0 6px 18px rgba(0,0,0,.06)}
-  h1{font-size:22px;margin:0 0 14px}
-  .row{margin:10px 0;word-break:break-all}
-  .k{display:inline-block;min-width:84px;color:#666}
-  textarea{width:100%;min-height:120px;padding:12px;border:1px solid #ddd;border-radius:10px;font:inherit}
-  button{padding:12px 16px;border:0;border-radius:10px;cursor:pointer;font-weight:600}
-  .primary{background:var(--pri);color:#fff}
-  .muted{background:var(--mut);color:#333;margin-left:8px}
-  .disabled{opacity:.5;cursor:not-allowed}
-  .ok{color:#0a8;font-weight:600}
-  .err{color:#d33;font-weight:600}
-  .hint{font-size:12px;color:#777}
-</style>
+  <meta charset="UTF-8">
+  <title>任务反馈</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 600px; margin: 30px auto; }
+    h2 { color: #333; }
+    textarea { width: 100%; height: 120px; margin: 10px 0; }
+    button { padding: 10px 20px; margin: 5px; cursor: pointer; border: none; border-radius: 4px; }
+    #submitBtn { background-color: #1677ff; color: white; }
+    #viewBtn { background-color: #eee; }
+    #submitBtn.disabled { background-color: #999; cursor: not-allowed; }
+  </style>
 </head>
 <body>
-<div class="card">
-  <h1>任务完成确认</h1>
+  <h2>任务完成确认</h2>
+  <p>任务：<span id="subject">-</span></p>
+  <p>执行人：<span id="executor">-</span></p>
+  <p>sourceId：<span id="sourceId">-</span></p>
+  <p>备注:</p>
+  <textarea id="remark"></textarea><br>
+  <button id="submitBtn">完成并提交</button>
+  <button id="viewBtn">仅查看</button>
 
-  <div class="row"><span class="k">任务：</span><span id="subject">-</span></div>
-  <div class="row"><span class="k">执行人：</span><span id="executor">-</span></div>
-  <div class="row"><span class="k">sourceId：</span><span id="sid">-</span></div>
+  <script>
+    // 1) 改成你的 Worker 地址（记得替换成实际 workers.dev）
+    const RELAY_ENDPOINT = "https://dingtalk-relay.<你的账号名>.workers.dev/";
 
-  <div class="row"><span class="k">备注：</span></div>
-  <div class="row"><textarea id="remark" placeholder="填写执行情况（可选）"></textarea></div>
+    // 2) 从 URL 获取参数
+    const P = new URLSearchParams(location.search);
+    const subject  = P.get('subject') || "演示任务";
+    const executor = P.get('executor') || "张三";
+    const sourceId = P.get('sourceId') || "demo-001";
 
-  <div class="row">
-    <button id="submitBtn" class="primary">完成并提交</button>
-    <button id="viewBtn" class="muted">仅查看</button>
-  </div>
+    // 显示到页面
+    document.getElementById("subject").innerText = subject;
+    document.getElementById("executor").innerText = executor;
+    document.getElementById("sourceId").innerText = sourceId;
 
-  <div class="row" id="status"></div>
-  <div class="row hint">
-    说明：仅使用 GitHub Pages。采用“本机锁定 + 只读链接”防重复；换设备/清缓存仍可能再次提交，群消息会包含 <code>sourceId</code> 便于识别。
-  </div>
-</div>
+    // 3) 封装调用 Worker 的函数
+    async function sendToDingTalk({ subject, executor, sourceId, remark }) {
+      const body = {
+        payload: {
+          msgtype: "markdown",
+          markdown: {
+            title: "任务完成",
+            text: `**任务完成**
+- 任务：${subject}
+- 执行人：${executor}
+- sourceId：${sourceId}
+- 备注：${remark || "-"}
+- 完成时间：${new Date().toLocaleString('zh-CN')}`
+          }
+        }
+      };
 
-<script>
-  // ========= 1) 你的默认钉钉机器人配置（建议至少填写 webhook） =========
-  const DING_WEBHOOK_DEFAULT = "https://oapi.dingtalk.com/robot/send?access_token=c8fab74b69fe8fb2e2e9cee1663fb13861680e3d9812f31014e1f7c2becfd16d"; // 例: https://oapi.dingtalk.com/robot/send?access_token=xxxx
-  const DING_SECRET_DEFAULT  = "SEC0a7d2d05fa41435c0d186e54d50d26273caf68f4032ad1b3da585b158c595077"; // 若机器人安全=加签，填密钥；若使用“关键字”安全，可留空
-
-  // ========= 2) 读取 URL 参数（可覆盖默认配置） =========
-  const P = new URLSearchParams(location.search);
-  const subject  = P.get('subject') || '未命名任务';
-  const sourceId = (P.get('sourceId') || '').trim();
-  const executor = P.get('executorUnionId') || P.get('executor') || '';
-  const creator  = P.get('creatorUnionId') || '';
-  const readonlyParam = P.get('readonly') === '1';
-  const DING_WEBHOOK = decodeURIComponent(P.get('dingWebhook') || '') || DING_WEBHOOK_DEFAULT;
-  const DING_SECRET  = decodeURIComponent(P.get('dingSecret')  || '') || DING_SECRET_DEFAULT;
-
-  // ========= 3) 渲染基本信息 =========
-  const $ = id => document.getElementById(id);
-  $('subject').textContent = subject;
-  $('executor').textContent = executor || '(未传)';
-  $('sid').textContent     = sourceId || '(未传)';
-  const btn = $('submitBtn'), viewBtn = $('viewBtn');
-  const remarkEl = $('remark'), statusEl = $('status');
-
-  function setStatus(html){ statusEl.innerHTML = html; }
-  function disableSubmit(msg){
-    btn.disabled = true; btn.classList.add('disabled');
-    remarkEl.readOnly = true;
-    if (msg) setStatus(msg);
-  }
-
-  // ========= 4) 钉钉加签（如果启用了“加签”安全） =========
-  async function signDing(secret, timestamp) {
-    const enc = new TextEncoder();
-    const key = await crypto.subtle.importKey("raw", enc.encode(secret), {name:"HMAC", hash:"SHA-256"}, false, ["sign"]);
-    const sig = await crypto.subtle.sign("HMAC", key, enc.encode(timestamp + "\n" + secret));
-    const base64 = btoa(String.fromCharCode(...new Uint8Array(sig)));
-    return encodeURIComponent(base64);
-  }
-
-  // ========= 5) 发送钉钉消息（Markdown） =========
-  async function sendToDingTalk(payload) {
-    if (!DING_WEBHOOK) return { ok:false, msg:"未配置钉钉 webhook" };
-
-    let url = DING_WEBHOOK.trim();
-    if (DING_SECRET) {
-      const ts = Date.now();
-      const sign = await signDing(DING_SECRET, ts);
-      url += (url.includes('?') ? '&' : '?') + `timestamp=${ts}&sign=${sign}`;
+      const r = await fetch(RELAY_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      return r.json().catch(() => ({}));
     }
 
-    const text =
-`**任务完成**
-- 任务：${payload.subject}
-- 执行人：${payload.executor || "-"}
-- sourceId：${payload.sourceId}
-- 备注：${payload.remark || "-"}
-- 完成时间：${new Date(payload.ts).toLocaleString('zh-CN')}`;
+    // 4) 绑定按钮事件
+    const btn = document.getElementById("submitBtn");
+    const remarkEl = document.getElementById("remark");
 
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type":"application/json;charset=utf-8" },
-      body: JSON.stringify({ msgtype: "markdown", markdown: { title: "任务完成", text } })
-    });
-    const data = await resp.json().catch(()=> ({}));
-    return { ok: data.errcode === 0, msg: JSON.stringify(data) };
-  }
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      btn.classList.add("disabled");
+      btn.innerText = "提交中...";
 
-  // ========= 6) 进入页面：只读判定（本机锁 + URL） =========
-  const LOCK_KEY = sourceId ? 'done_' + sourceId : '';
-  (function init(){
-    if (!sourceId){ disableSubmit('<span class="err">缺少 sourceId，无法提交。</span>'); return; }
-    const localLocked = localStorage.getItem(LOCK_KEY) === '1';
-    if (localLocked || readonlyParam) {
-      disableSubmit('👀 当前为只读模式。');
-    } else {
-      setStatus('✅ 可提交。');
-    }
-  })();
+      const result = await sendToDingTalk({
+        subject,
+        executor,
+        sourceId,
+        remark: remarkEl.value
+      });
 
-  // ========= 7) 仅查看：不提交，切换只读链接 =========
-  viewBtn.addEventListener('click', ()=>{
-    disableSubmit('👀 已切换为仅查看模式。');
-    const u = new URL(location.href);
-    u.searchParams.set('readonly','1');
-    history.replaceState(null,'',u.toString());
-  });
-
-  // ========= 8) 完成并提交：发钉钉 + 本机锁 + 只读链接 =========
-  btn.addEventListener('click', async ()=>{
-    if (btn.disabled) return;
-    if (!sourceId){ setStatus('<span class="err">缺少 sourceId。</span>'); return; }
-
-    btn.disabled = true; btn.classList.add('disabled');
-    setStatus('⏳ 提交中…');
-    const payload = {
-      subject, sourceId, executor, creator,
-      remark: remarkEl.value || '',
-      ts: Date.now()
-    };
-
-    try {
-      const res = await sendToDingTalk(payload);
-      if (res.ok) {
-        localStorage.setItem(LOCK_KEY, '1');          // 本机锁
-        const u = new URL(location.href);             // 切只读链接
-        u.searchParams.set('readonly','1');
-        history.replaceState(null,'',u.toString());
-        disableSubmit('✅ 已提交，已推送到群，页面已锁定为只读。');
+      if (result.errcode === 0) {
+        remarkEl.readOnly = true;
+        btn.innerText = "已提交";
+        alert("提交成功，已推送到钉钉群");
       } else {
-        setStatus('<span class="err">钉钉推送失败：</span>' + res.msg);
-        btn.disabled = false; btn.classList.remove('disabled');
+        btn.disabled = false;
+        btn.classList.remove("disabled");
+        btn.innerText = "完成并提交";
+        alert("提交失败: " + JSON.stringify(result));
       }
-    } catch (e) {
-      setStatus('<span class="err">网络异常：</span>' + e);
-      btn.disabled = false; btn.classList.remove('disabled');
-    }
-  });
-</script>
+    });
+
+    document.getElementById("viewBtn").addEventListener("click", () => {
+      remarkEl.readOnly = true;
+      btn.disabled = true;
+      btn.classList.add("disabled");
+      btn.innerText = "只读模式";
+    });
+  </script>
 </body>
 </html>
-
