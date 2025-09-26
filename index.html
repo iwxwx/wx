@@ -45,8 +45,8 @@
 
 <script>
   // ========= 1) 你的默认钉钉机器人配置（建议至少填写 webhook） =========
-  const DING_WEBHOOK_DEFAULT = "在这里填你的机器人Webhook"; // 例: https://oapi.dingtalk.com/robot/send?access_token=xxxx
-  const DING_SECRET_DEFAULT  = ""; // 若机器人安全=加签，填密钥；若使用“关键字”安全，可留空
+  const DING_WEBHOOK_DEFAULT = "https://oapi.dingtalk.com/robot/send?access_token=c8fab74b69fe8fb2e2e9cee1663fb13861680e3d9812f31014e1f7c2becfd16d"; // 例: https://oapi.dingtalk.com/robot/send?access_token=xxxx
+  const DING_SECRET_DEFAULT  = "SEC0a7d2d05fa41435c0d186e54d50d26273caf68f4032ad1b3da585b158c595077"; // 若机器人安全=加签，填密钥；若使用“关键字”安全，可留空
 
   // ========= 2) 读取 URL 参数（可覆盖默认配置） =========
   const P = new URLSearchParams(location.search);
@@ -163,3 +163,4 @@
 </script>
 </body>
 </html>
+
