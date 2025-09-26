@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>任务反馈</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; }
+    textarea { width: 100%; height: 100px; margin-top: 10px; }
+    button { margin-top: 10px; padding: 10px 20px; }
+    .readonly { background: #f2f2f2; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <h2>任务反馈</h2>
+  <label for="remark">备注：</label><br>
+  <textarea id="remark"></textarea><br>
+  <button id="submitBtn">完成并提交</button>
+
+  <script>
+    // 检查是否已提交过
+    if (localStorage.getItem("submitted") === "true") {
+      document.getElementById("remark").classList.add("readonly");
+      document.getElementById("remark").value = localStorage.getItem("remark") || "";
+      document.getElementById("submitBtn").disabled = true;
+      document.getElementById("submitBtn").innerText = "已完成";
+    }
+
+    document.getElementById("submitBtn").addEventListener("click", function() {
+      const remark = document.getElementById("remark").value;
+      if (!remark) {
+        alert("请填写备注再提交！");
+        return;
+      }
+      // 这里你可以接 webhook 或者直接发给钉钉机器人
+      console.log("提交备注：", remark);
+
+      // 保存状态到浏览器本地，避免重复提交
+      localStorage.setItem("submitted", "true");
+      localStorage.setItem("remark", remark);
+
+      // 设置为只读
+      document.getElementById("remark").classList.add("readonly");
+      document.getElementById("submitBtn").disabled = true;
+      document.getElementById("submitBtn").innerText = "已完成";
+      alert("提交成功！");
+    });
+  </script>
+</body>
+</html>
